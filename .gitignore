@@ -1,0 +1,12 @@
+# Entorno y caches
+.venv/
+__pycache__/
+*.py[cod]
+*.ipynb_checkpoints/
+ECHO est  activado.
+# Datos pesados / artefactos
+data/**/*.parquet
+data/**/*.feather
+*.log
+models/
+checkpoints/
