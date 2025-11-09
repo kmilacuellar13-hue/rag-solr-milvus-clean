@@ -1,0 +1,2 @@
+{"qid":"q1","query":"acuerdo de paz y territorios"}
+{"qid":"q2","query":"participación de víctimas en el proceso"}

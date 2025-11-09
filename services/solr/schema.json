@@ -1,0 +1,7 @@
+{
+  "set-unique-key": "id",
+  "add-field": [
+    { "name": "id", "type": "string", "stored": true, "indexed": true, "required": true },
+    { "name": "text", "type": "text_general", "stored": true, "indexed": true, "multiValued": false }
+  ]
+}

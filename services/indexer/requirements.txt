@@ -1,0 +1,9 @@
+pandas
+requests==2.32.3
+#pymilvus==2.4.3
+sentence-transformers==2.7.0
+torch
+numpy
+tqdm
+
+

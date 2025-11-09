@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Buscador RAG (Solr + Milvus)</title>
+  <style>
+    :root{--bg:#0b1220;--card:#111a2b;--muted:#97a3b6;--ink:#e8eef9;--accent:#7aa2ff;--ok:#47d382;--err:#ff6b6b}
+    *{box-sizing:border-box}
+    body{margin:0;padding:24px;background:linear-gradient(180deg,#0b1220,#0e1526);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif}
+    .wrap{max-width:1100px;margin:0 auto}
+    .head{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+    .title{font-weight:700;font-size:20px;letter-spacing:.2px}
+    .pill{border:1px solid #1f2a44;border-radius:999px;padding:4px 10px;color:var(--muted);font-size:12px}
+    .panel{margin-top:16px;background:var(--card);border:1px solid #1a243c;border-radius:16px;padding:16px}
+    .row{display:flex;gap:12px;flex-wrap:wrap}
+    input[type="text"], select{background:#0c1627;border:1px solid #213055;color:var(--ink);padding:10px 12px;border-radius:10px;min-width:220px;outline:none}
+    input[type="number"]{width:90px}
+    .btn{background:var(--accent);border:none;color:#071224;font-weight:700;padding:10px 14px;border-radius:10px;cursor:pointer}
+    .btn:disabled{opacity:.6;cursor:not-allowed}
+    .results{margin-top:18px;display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+    .card{background:#0d182a;border:1px solid #1a2947;border-radius:14px;padding:14px;display:flex;gap:10px;flex-direction:column}
+    .meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+    .tag{padding:2px 8px;border-radius:999px;border:1px solid #2a3a62}
+    .id{font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;color:#a8b7d6}
+    .score{color:var(--ok)}
+    .text{white-space:pre-wrap;line-height:1.35}
+    .bar{display:flex;justify-content:space-between;align-items:center;margin-top:8px;color:var(--muted);font-size:12px}
+    .link{color:var(--accent);text-decoration:none}
+    .muted{color:var(--muted)}
+    .kbd{border:1px solid #27375f;border-bottom-width:2px;background:#0b162a;padding:2px 6px;border-radius:6px;font-family:ui-monospace, monospace}
+    .flex{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .spinner{width:16px;height:16px;border:2px solid #2c3e70;border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .error{color:var(--err)}
+    .footer{margin-top:14px;display:flex;justify-content:space-between;gap:10px;align-items:center}
+    .switch{display:inline-flex;background:#0c1527;border:1px solid #25355f;border-radius:12px;overflow:hidden}
+    .switch button{background:transparent;color:var(--ink);border:none;padding:8px 12px;cursor:pointer}
+    .switch button.active{background:#1a2a49}
+    .raw{max-height:300px;overflow:auto;background:#081024;border:1px solid #1b2744;border-radius:12px;padding:10px;margin-top:10px}
+    .hint{font-size:12px;color:var(--muted)}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="head">
+      <div class="title">🔎 Buscador RAG — Solr + Milvus</div>
+      <div class="pill">localhost:8000</div>
+    </div>
+
+    <div class="panel">
+      <div class="row">
+        <input id="q" type="text" placeholder="Escribe tu consulta… (p.ej., paz territorial)" />
+        <select id="backend">
+          <option value="solr">Solr (texto)</option>
+          <option value="milvus">Milvus (vectorial)</option>
+          <option value="both" selected>Ambos</option>
+        </select>
+        <input id="k" type="number" min="1" max="50" value="5" />
+        <button id="go" class="btn">Buscar</button>
+        <span id="busy" class="flex" style="display:none"><span class="spinner"></span> Buscando…</span>
+      </div>
+      <div class="footer">
+        <div class="hint">Consejo: pulsa <span class="kbd">Enter</span> para buscar rápidamente.</div>
+        <div class="switch" role="tablist" aria-label="Vista">
+          <button id="viewCards" class="active" aria-selected="true">Tarjetas</button>
+          <button id="viewJSON" aria-selected="false">JSON</button>
+        </div>
+      </div>
+      <div id="error" class="error" style="display:none"></div>
+      <div id="cards" class="results"></div>
+      <pre id="raw" class="raw" style="display:none"></pre>
+    </div>
+
+    <p class="hint">
+      Si ves un error de <span class="kbd">CORS</span>, añade CORS a tu API (FastAPI):
+    </p>
+    <pre class="raw">from fastapi.middleware.cors import CORSMiddleware
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True,
+                   allow_methods=["*"], allow_headers=["*"])</pre>
+  </div>
+
+  <script>
+    const $ = (s) => document.querySelector(s);
+    const q = $('#q');
+    const backend = $('#backend');
+    const k = $('#k');
+    const go = $('#go');
+    const busy = $('#busy');
+    const cards = $('#cards');
+    const raw = $('#raw');
+    const error = $('#error');
+    const viewCards = $('#viewCards');
+    const viewJSON = $('#viewJSON');
+
+    function showBusy(on){ busy.style.display = on ? 'inline-flex' : 'none'; go.disabled = !!on; }
+    function showError(msg){ error.textContent = msg || ''; error.style.display = msg ? 'block' : 'none'; }
+    function setView(mode){
+      const showCards = mode === 'cards';
+      cards.style.display = showCards ? 'grid' : 'none';
+      raw.style.display = showCards ? 'none' : 'block';
+      viewCards.classList.toggle('active', showCards);
+      viewJSON.classList.toggle('active', !showCards);
+      viewCards.setAttribute('aria-selected', showCards);
+      viewJSON.setAttribute('aria-selected', !showCards);
+    }
+    setView('cards');
+
+    viewCards.addEventListener('click', () => setView('cards'));
+    viewJSON.addEventListener('click', () => setView('json'));
+
+    async function fetchJSON(url){
+      const r = await fetch(url);
+      if(!r.ok){
+        const t = await r.text();
+        throw new Error(`${r.status} ${r.statusText}: ${t}`);
+      }
+      return r.json();
+    }
+
+    function chunk(text, n=280){
+      if(!text) return '';
+      return text.length>n ? text.slice(0, n) + '…' : text;
+    }
+
+    function card(item){
+      const id = item.id ? `<span class="id">${item.id}</span>` : '';
+      const score = (typeof item.score === 'number') ? `<span class="score">score: ${item.score.toFixed(3)}</span>` : '';
+      return `<div class="card">
+        <div class="meta"><span class="tag">${item.source}</span>${id}${score}</div>
+        <div class="text">${(item.text && item.text !== 'null') ? chunk(item.text, 800) : '<span class="muted">(sin texto)</span>'}</div>
+      </div>`;
+    }
+
+    async function run(){
+      const query = q.value.trim();
+      const kk = Math.max(1, Math.min(50, parseInt(k.value, 10) || 5));
+      if(!query){ showError('Escribe una consulta.'); return; }
+      showError('');
+      showBusy(true);
+      cards.innerHTML = '';
+      raw.textContent = '';
+
+      try{
+        const base = 'http://localhost:8000';
+        let data = [];
+        if(backend.value === 'solr' || backend.value === 'both'){
+          const s = await fetchJSON(`${base}/solr?q=${encodeURIComponent(query)}&k=${kk}`);
+          data = data.concat(s);
+        }
+        if(backend.value === 'milvus' || backend.value === 'both'){
+          const m = await fetchJSON(`${base}/milvus?q=${encodeURIComponent(query)}&k=${kk}`);
+          data = data.concat(m);
+        }
+        // Render tarjetas
+        cards.innerHTML = data.map(card).join('');
+        // Vista JSON
+        raw.textContent = JSON.stringify(data, null, 2);
+      } catch(e){
+        console.error(e);
+        showError('Error al consultar: ' + e.message);
+      } finally {
+        showBusy(false);
+      }
+    }
+
+    go.addEventListener('click', run);
+    q.addEventListener('keydown', (ev)=>{ if(ev.key === 'Enter') run(); });
+  </script>
+</body>
+</html>

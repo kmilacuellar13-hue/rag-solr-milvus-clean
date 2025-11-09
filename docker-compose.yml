@@ -1,0 +1,118 @@
+services:
+  # ---------- SOLR ----------
+  solr:
+    image: solr:9.4
+    container_name: solr
+    ports:
+      - "8983:8983"
+    command: ["solr-precreate", "rag2"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8983/solr/admin/info/system"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+
+  solr-init:
+    image: curlimages/curl:8.8.0
+    container_name: solr-init
+    depends_on:
+      solr:
+        condition: service_healthy
+    volumes:
+      - ./services/solr/schema.json:/schema.json:ro
+    entrypoint: ["/bin/sh","-c"]
+    # OJO: sin comillas externas; cada comando encadenado con &&
+    command: >
+      echo '📄 Aplicando schema en Solr...' &&
+      curl -s -X POST 'http://solr:8983/solr/rag2/schema' -H 'Content-Type: application/json'
+      --data @/schema.json || true &&
+      echo '✅ Schema aplicado correctamente.'
+
+  # ---------- ETCD ----------
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.9
+    container_name: etcd
+    command:
+      - etcd
+      - --advertise-client-urls=http://0.0.0.0:2379
+      - --listen-client-urls=http://0.0.0.0:2379
+    ports:
+      - "2379:2379"
+    healthcheck:
+      test: ["CMD", "etcdctl", "--endpoints=http://127.0.0.1:2379", "endpoint", "health"]
+      interval: 5s
+      timeout: 5s
+      start_period: 10s
+      retries: 30
+
+  # ---------- MINIO ----------
+  minio:
+    image: minio/minio:RELEASE.2024-06-13T22-53-53Z
+    container_name: minio
+    environment:
+      MINIO_ROOT_USER: "minioadmin"
+      MINIO_ROOT_PASSWORD: "minioadmin"
+    command: ["server", "/data", "--console-address", ":9001"]
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  # ---------- MILVUS ----------
+  milvus:
+    image: milvusdb/milvus:v2.4.9
+    platform: linux/amd64
+    container_name: milvus
+    entrypoint: ["/tini","--"]
+    command: ["bash","-lc","milvus run standalone"]
+    environment:
+      ETCD_ENDPOINTS: "etcd:2379"
+      MINIO_ADDRESS: "minio:9000"
+      MINIO_ACCESS_KEY_ID: "minioadmin"
+      MINIO_SECRET_ACCESS_KEY: "minioadmin"
+      MINIO_USE_SSL: "false"
+      COMMON_METRIC_HOST: "0.0.0.0"
+      COMMON_METRIC_PORT: "9091"
+      MILVUS_LOG_LEVEL: "debug"
+    depends_on:
+      etcd:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    shm_size: 2g
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9091/healthz"]
+      interval: 10s
+      timeout: 5s
+      start_period: 120s
+      retries: 90
+
+  # ---------- API ----------
+  api:
+    build:
+      context: ./services/api     
+    container_name: rag_api
+    depends_on:
+      solr-init:
+        condition: service_completed_successfully
+      milvus:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      - SOLR_URL=http://solr:8983/solr/rag2
+      - MILVUS_HOST=milvus
+      - MILVUS_PORT=19530
+      - MILVUS_COLLECTION=corpus_rag
