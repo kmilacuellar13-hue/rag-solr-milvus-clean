@@ -164,7 +164,9 @@ Abrir en el navegador:
 
 Desde ahí puedes probar /solr, /milvus y /ask con formularios.
 
+
 6. Evaluar el desempeño (opcional, pero recomendado)
+   
 Si quieres medir métricas tipo recall, MRR, nDCG, etc., usa el evaluador.
 
 6.1. Archivo de queries + gold
