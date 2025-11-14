@@ -1,3 +1,0 @@
-{"qid":"q1","relevant_ids":[]}
-{"qid":"q2","relevant_ids":[]}
-

@@ -26,9 +26,11 @@ class SearchResponse(BaseModel):
     text: str | None = None
     score: float | None = None
 
+
 @app.get("/")
 def root():
     return {"service": "RAG Solr+Milvus API", "ok": True}
+
 
 # =========================
 # Health
@@ -36,6 +38,7 @@ def root():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
 
 # =========================
 # SOLR (BM25 / keyword)
@@ -45,20 +48,39 @@ def solr_query(q: str = Query(..., min_length=1), k: int = 5):
     try:
         r = requests.get(
             f"{SOLR_URL}/select",
-            params={"q": f"text:{q}", "rows": k, "fl": "id,text", "wt": "json"},
-            timeout=15
+            params={
+                "q": q,
+                "defType": "edismax",   # parser robusto para texto libre
+                "qf": "text",           # campo sobre el que se puntúa
+                "df": "text",           # campo por defecto
+                "rows": k,
+                "fl": "id,text,score",
+                "wt": "json",
+            },
+            timeout=15,
         )
         r.raise_for_status()
         docs = r.json().get("response", {}).get("docs", [])
+
         out: list[SearchResponse] = []
         for d in docs:
             txt = d.get("text", "")
             if isinstance(txt, list):
                 txt = txt[0]
-            out.append(SearchResponse(source="solr", id=d.get("id"), text=txt))
+            out.append(
+                SearchResponse(
+                    source="solr",
+                    id=d.get("id"),
+                    text=txt,
+                    score=float(d.get("score", 0.0)),
+                )
+            )
         return out
     except requests.RequestException as e:
         raise HTTPException(status_code=502, detail=f"Solr error: {e}")
+
+
+
 
 # =========================
 # MILVUS (Vector search)
@@ -70,16 +92,19 @@ _MODEL = None
 # Usa el MISMO modelo que indexaste
 MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
+
 def get_model() -> SentenceTransformer:
     global _MODEL
     if _MODEL is None:
         _MODEL = SentenceTransformer(MODEL_NAME)
     return _MODEL
 
+
 def milvus_connect():
     # Conexión "default" idempotente
     if not connections.has_connection("default"):
         connections.connect("default", host=MILVUS_HOST, port=str(MILVUS_PORT))
+
 
 @app.get("/milvus")
 def milvus_search(q: str = Query(..., min_length=1), k: int = 5):
@@ -91,11 +116,10 @@ def milvus_search(q: str = Query(..., min_length=1), k: int = 5):
 
         col = Collection(MILVUS_COLLECTION)
         try:
-            col.load()  # idempotente en 2.4.x
+            col.load()  # idempotente
         except Exception:
             pass
 
-        # Si tu índice es IVF usa nprobe; si es HNSW ajusta a "ef"
         search_params = {"metric_type": "COSINE", "params": {"nprobe": 10}}
 
         res = col.search(
@@ -103,23 +127,31 @@ def milvus_search(q: str = Query(..., min_length=1), k: int = 5):
             anns_field="embedding",
             param=search_params,
             limit=k,
-            output_fields=["text"]
+            output_fields=["parent_id", "text"],
         )
 
         out: list[SearchResponse] = []
         for hit in res[0]:
-            txt = hit.entity.get("text")
+            ent = hit.entity
+            txt = ent.get("text")
             if isinstance(txt, list):
                 txt = txt[0]
-            out.append(SearchResponse(
-                source="milvus",
-                id=str(hit.id),
-                text=txt or "",
-                score=float(hit.distance)  # en 2.4.x: .distance
-            ))
+
+            parent = ent.get("parent_id")
+            doc_id = str(parent) if parent is not None else str(hit.id)
+
+            out.append(
+                SearchResponse(
+                    source="milvus",
+                    id=doc_id,
+                    text=txt or "",
+                    score=float(hit.distance),
+                )
+            )
         return out
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Milvus error: {e}")
+
 
 # =========================
 # /ask -> unifica ambos
@@ -128,7 +160,7 @@ def milvus_search(q: str = Query(..., min_length=1), k: int = 5):
 def ask(
     query: str = Query(..., min_length=1),
     backend: str = Query("both", pattern="^(solr|milvus|both)$"),
-    k: int = 5
+    k: int = 5,
 ):
     results: list[SearchResponse] = []
     if backend in ("solr", "both"):
@@ -137,6 +169,8 @@ def ask(
         results += milvus_search(query, k)
     return results
 
+
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("app:app", host="0.0.0.0", port=8000)

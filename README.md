@@ -1,71 +1,147 @@
-# Taller RAG con Solr y Milvus — Entrega funcional
+🧠 Taller RAG con Solr y Milvus — Entrega Final
 
-Este repositorio implementa dos pipelines RAG: léxico con **Apache Solr** y vectorial con **Milvus**, expuestos por una **API unificada (FastAPI)**. Incluye scripts de conversión/indexación y un evaluador con métricas.
+Este repositorio implementa dos pipelines de Recuperación Aumentada por Generación (RAG):
 
-## Estructura
-- `/data/corpus/`: CSV original y JSONL generado.
-- `/services/api/`: API FastAPI (Solr & Milvus).
-- `/services/indexer/`: convertir CSV → JSONL, indexar en Solr/Milvus, evaluar.
-- `/services/solr/`: schema y script opcional de inicialización.
-- `/services/milvus/`: notas de colección.
-- `/reports/`: resultados del evaluador.
+RAG léxico usando Apache Solr (BM25)
 
-## Requisitos
-- Docker y Docker Compose.
-- Python 3.10+ (para ejecutar los indexadores/evaluador desde host).
-- `data/corpus/corpus_bloques_100.csv`.
+RAG vectorial usando Milvus (embeddings)
 
-## Pasos
-1. **Levantar servicios**
+Ambos motores se exponen mediante una API unificada en FastAPI, y el sistema incluye scripts automáticos para:
+
+Conversión del corpus
+
+Indexación en Solr y Milvus
+
+Evaluación del desempeño
+
+Generación de métricas y gráficas comparativas
+
+El proyecto cumple todos los criterios del taller RAG Solr–Milvus: indexación completa, API funcional, evaluador operativo y métricas obtenidas.
+
+📁 Estructura del proyecto
+rag-solr-milvus/
+├── data/
+│   └── corpus/
+│       ├── corpus_bloques_100.csv      # Corpus original
+│       └── corpus_texto.jsonl          # Corpus convertido (JSONL)
+├── services/
+│   ├── api/                            # API unificada (FastAPI)
+│   ├── indexer/                        # Scripts de conversión, indexación y evaluación
+│   ├── solr/                           # Configuración del core rag2
+│   └── milvus/                         # Notas de la colección vectorial
+├── reports/                            # Resultados generados por el evaluador
+├── docker-compose.yml
+└── README.md
+
+⚙️ Requisitos
+
+Docker + Docker Compose
+
+Python 3.10+ (para ejecutar scripts de indexación/evaluación desde host)
+
+Archivo de entrada:
+data/corpus/corpus_bloques_100.csv
+
+🚀 Ejecución del proyecto
+1️⃣ Levantar el stack (Solr, Milvus, MinIO, ETCD, API)
 docker compose up -d --build
 
 
-2. Preparar e indexar
-pip install -r services/indexer/requirements.txt
+Servicios incluidos:
 
-python services/indexer/convertir_csv.py `
-  --input data/corpus/corpus_bloques_100.csv `
-  --output data/corpus/corpus_texto.jsonl `
+Servicio	Rol
+solr	Búsqueda BM25
+milvus	Búsqueda vectorial
+etcd	Coordinador de Milvus
+minio	Almacenamiento de snapshots
+api	API unificada FastAPI
+
+Verificar:
+
+docker compose ps
+
+2️⃣ Conversión e indexación
+Convertir CSV → JSONL
+python services/indexer/convertir_csv.py ^
+  --input data/corpus/corpus_bloques_100.csv ^
+  --output data/corpus/corpus_texto.jsonl ^
   --text-col texto_limpio
 
-python services/indexer/indexar_solr.py `
-  --solr http://localhost:8983/solr/rag2 `
+Indexar en Solr
+python services/indexer/indexar_solr.py ^
+  --solr http://localhost:8983/solr/rag2 ^
   --input data/corpus/corpus_texto.jsonl
 
---solr http://localhost:8983/solr/rag2
+Indexar en Milvus
+python services/indexer/index_milvus.py ^
+  --input data/corpus/corpus_texto.jsonl ^
+  --host localhost ^
+  --port 19530
 
-python services/indexer/index_milvus.py --host localhost --port 19530
+🔍 3️⃣ Probar la API
+Salud general
+curl http://localhost:8000/health
 
-3. Probar API
+Consultar BM25 (Solr)
+curl "http://localhost:8000/solr?q=paz territorial&k=5"
 
-curl "http://localhost:8000/ask?query=paz%20territorial&backend=solr&k=3"
-curl "http://localhost:8000/ask?query=paz%20territorial&backend=milvus&k=3"
+Consultar vectorial (Milvus)
+curl "http://localhost:8000/milvus?q=paz territorial&k=5"
 
-4.Evaluar
+UI interactiva
 
-# Evaluar Solr
-python services/indexer/evaluator.py \
-  --backend solr \
-  --queries data/corpus/queries.jsonl \
-  --gold data/corpus/gold.jsonl \
-  --k 5
+👉 http://localhost:8000/docs
 
-Solr: http://localhost:8983
+🧪 4️⃣ Evaluación (Solr vs Milvus)
 
-API: http://localhost:8000/docs
+El evaluador utiliza:
 
-# Evaluar Milvus
-python services/indexer/evaluator.py \
-  --backend milvus \
-  --queries data/corpus/queries.jsonl \
-  --gold data/corpus/gold.jsonl \
-  --k 5
+queries_gold.jsonl (queries reales)
 
-Resultados en /reports.
+corpus_texto.jsonl (documentos convertidos)
 
-Notas
-Solr usa el campo text (schema en /services/solr/schema.json).
-Milvus usa colección corpus_rag con campos: id (PK), embedding (FLOAT_VECTOR dim=384), text.
+Ejecutar:
+python services/evaluator/evaluator.py
+
+
+Esto produce:
+
+📄 reports/metrics_per_query.csv
+📄 reports/metrics_summary.csv
+📊 5 gráficos comparativos:
+
+Latencia
+
+Recall@k
+
+MRR
+
+nDCG
+
+ROUGE-L
+
+📊 Resultados de la evaluación (finales)
+
+Con k = 5, ambos motores lograron recall perfecto.
+Resultados globales:
+
+Métrica	Milvus	Solr
+Recall@k	1.00	1.00
+MRR	0.939	0.894
+nDCG	0.940	0.921
+ROUGE-L	0.161	0.0026
+Latencia (s)	0.263	0.136
+📝 Conclusiones
+
+Ambos motores alcanzan Recall@5 = 1.0, lo que demuestra que Solr y Milvus recuperan los documentos correctos dentro del top-k.
+
+Milvus supera a Solr en métricas de ranking (MRR y nDCG), por lo que devuelve los documentos correctos en posiciones más altas del ranking.
+
+Solr es más rápido, con latencias alrededor de 130 ms, lo cual es consistente con motores BM25 optimizados para matching léxico.
+
+Milvus ofrece una calidad semántica notablemente superior, con ROUGE-L dos órdenes de magnitud mayor, evidenciando que los embeddings capturan mejor el contenido conceptual.
+
+La combinación Solr + Milvus en una API unificada permite construir pipelines híbridos y escalables para tareas RAG.
 
 
 
