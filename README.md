@@ -44,7 +44,7 @@ rag-solr-milvus/
 └── README.md
 ```
 
-2. Levantar los servicios (Solr, Milvus, API)
+## 2. Levantar los servicios (Solr, Milvus, API)
 Desde la raíz del proyecto:
 
 ```bash
@@ -64,19 +64,19 @@ Verificar:
 docker compose ps
 ```
 
-3. Preparar el corpus (CSV → JSONL)
+## 3. Preparar el corpus (CSV → JSONL)
 Solo si aún no existe data/corpus/corpus_texto.jsonl.
 
-3.1. Crear entorno (opcional, pero recomendado)
+### 3.1. Crear entorno (opcional, pero recomendado)
 ```bash
 python -m venv .venv
 .venv\Scripts\activate
 ```
-3.2. Instalar dependencias de los scripts
+### 3.2. Instalar dependencias de los scripts
 ```bash
 pip install -r services/indexer/requirements.txt
 ```
-3.3. Convertir el CSV a JSONL
+### 3.3. Convertir el CSV a JSONL
 ```bash
 python services/indexer/convertir_csv.py ^
   --input data/corpus/corpus_bloques_100.csv ^
@@ -85,8 +85,8 @@ python services/indexer/convertir_csv.py ^
 ```
 texto_limpio es el nombre de la columna que contiene el texto en el CSV.
 
-4. Indexar en Solr y Milvus
-4.1. Indexar en Solr (BM25)
+## 4. Indexar en Solr y Milvus
+### 4.1. Indexar en Solr (BM25)
 ```bash
 python services/indexer/indexar_solr.py
 ```
@@ -105,7 +105,7 @@ Ping: {'status': 'OK', ...}
 Indexed N documents into Solr core 'rag2'
 ```
 
-4.2. Indexar en Milvus (vectorial)
+### 4.2. Indexar en Milvus (vectorial)
 ```bash
 python services/indexer/index_milvus.py ^
   --input data/corpus/corpus_texto.jsonl ^
@@ -123,8 +123,8 @@ Indexando: 100%|██████████████| 12/12 [00:15]
 OK -> 725 chunks en colección 'corpus_rag'
 ```
 
-5. Probar la API paso a paso
-5.1. Comprobar que la API está viva
+## 5. Probar la API paso a paso
+### 5.1. Comprobar que la API está viva
 ```bash
 curl http://localhost:8000/health
 ```
@@ -133,20 +133,20 @@ Respuesta esperada:
 ```json
 {"status":"ok"}
 ```
-5.2. Probar endpoint Solr (/solr)
+### 5.2. Probar endpoint Solr (/solr)
 
 Ejemplo:
 
 ```bash
 curl "http://localhost:8000/solr?q=paz territorial&k=5"
 ```
-5.3. Probar endpoint Milvus (/milvus)
+### 5.3. Probar endpoint Milvus (/milvus)
 ```bash
 curl "http://localhost:8000/milvus?q=paz territorial&k=5"
 ```
 Respuesta similar, con "source": "milvus".
 
-5.4. Probar endpoint unificado /ask
+### 5.4. Probar endpoint unificado /ask
 ```bash
 curl "http://localhost:8000/ask?query=paz territorial&backend=solr&k=5"
 curl "http://localhost:8000/ask?query=paz territorial&backend=milvus&k=5"
@@ -156,7 +156,7 @@ curl "http://localhost:8000/ask?query=paz territorial&backend=both&k=5"
 * backend=milvus → solo Milvus
 * backend=both → concatena resultados de ambos backends
 
-5.5. UI interactiva (Swagger / Redoc)
+### 5.5. UI interactiva (Swagger / Redoc)
 Abrir en el navegador:
 
 * Swagger: 👉 http://localhost:8000/docs
@@ -165,18 +165,18 @@ Abrir en el navegador:
 Desde ahí puedes probar /solr, /milvus y /ask con formularios.
 
 
-6. Evaluar el desempeño (opcional, pero recomendado)
+## 6. Evaluar el desempeño (opcional, pero recomendado)
    
 Si quieres medir métricas tipo recall, MRR, nDCG, etc., usa el evaluador.
 
-6.1. Archivo de queries + gold
+### 6.1. Archivo de queries + gold
 El evaluador usa:
 * data/queries_gold.jsonl
 con campos:
   * query → texto de la pregunta
   * gold_ids → lista de IDs relevantes (por ejemplo ["doc_000000"])
 
-6.2. Ejecutar el evaluador
+### 6.2. Ejecutar el evaluador
 ```bash
 python services/evaluator/evaluator.py
 ```
@@ -207,7 +207,7 @@ milvus   0.263548          1.0  0.939394  0.940064  0.161310
 solr     0.136780          1.0  0.893939  0.920994  0.002627
 ```
 
-7. Accesos rápidos
+## 7. Accesos rápidos
 * 🧠 API FastAPI: http://localhost:8000
 * 📚 Docs Swagger: http://localhost:8000/docs
 * 🔎 Solr UI: http://localhost:8983/solr/#/rag2/query
