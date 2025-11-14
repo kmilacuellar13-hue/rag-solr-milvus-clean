@@ -61,7 +61,7 @@ Esto levanta:
 Verificar:
 
 ```bash
-docker compose ps}
+docker compose ps
 ```
 
 3. Preparar el corpus (CSV → JSONL)
