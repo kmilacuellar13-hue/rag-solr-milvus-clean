@@ -92,7 +92,7 @@ python services/indexer/indexar_solr.py
 ```
 Este script:
 
-* Hace ping a http://localhost:8983/solr/rag2
+* Hace ping a [http://localhost:8983/solr/rag2](http://localhost:8983/solr/#/rag2/query)
 * Lee data/corpus/corpus_texto.jsonl
 * Inserta cada documento en el core rag2 con campos:
   *  id
