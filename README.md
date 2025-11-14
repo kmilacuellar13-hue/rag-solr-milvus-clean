@@ -151,8 +151,8 @@ Respuesta similar, con "source": "milvus".
 curl "http://localhost:8000/ask?query=paz territorial&backend=solr&k=5"
 curl "http://localhost:8000/ask?query=paz territorial&backend=milvus&k=5"
 curl "http://localhost:8000/ask?query=paz territorial&backend=both&k=5"
-backend=solr → solo Solr
 ```
+* backend=solr → solo Solr
 * backend=milvus → solo Milvus
 * backend=both → concatena resultados de ambos backends
 
